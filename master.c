@@ -16,12 +16,13 @@ Resource Management
 #include <sys/stat.h>
 #include <signal.h>
 #include <semaphore.h>
-#include "conb.h"
+#include "info.h"
 
 char errstr[50];
 FILE *f;
 int shmidA, shmidB, shmidC;
 sem_t *semaphore;
+int active;
 
 void sig_handler(int);
 void clean_up(void);
@@ -55,18 +56,21 @@ int main(int argc, char *argv[]){
 	// 1,000 ms = 1 second
 	// 1,000,000,000 ns = 1 seconds
 	// 1 ms = 1,000,000 ns	
-	int kidLim = 5;						// limit on processes to have at once
-	int active = 0;						// # of currently active processes
+	int kidLim = 2;						// limit on processes to have at once
+	active = 0;							// # of currently active processes
 	int simTimeEnd = 10;				// when to end the simulation
 	int numShare;						// how many resources to share this time
 	int verFlag = 0;
-	int reqNum = 0;						// which # request a child is
+	int * reqNum;						// which # request a child is
 	int when;							// when to fork a new child
+	int resLim = 2;
+	int i;
 	
 	pid_t pid, cpid;
 	char fname[] = "log.out";		// file name
 	
     time_t start;					// the timer information
+	time_t end;
 	/* VARIOUS VARIABLES END */
 	
 	
@@ -155,7 +159,7 @@ int main(int argc, char *argv[]){
 	// [0] is seconds, [1] is nanoseconds
 	int *clock;
 	struct Resources *r;
-	struct Request *requests;
+	struct Request *req;
 	
 	// create segments to hold all the info from file
 	if ((shmidA = shmget(KEYA, 50, IPC_CREAT | 0666)) < 0) {
@@ -163,12 +167,12 @@ int main(int argc, char *argv[]){
 		clean_up();
         exit(1);
     }
-	else if ((shmidB = shmget(KEYB, (sizeof(struct Resources)*kidLim), IPC_CREAT | 0666)) < 0) {
+	else if ((shmidB = shmget(KEYB, (sizeof(struct Resources)*resLim), IPC_CREAT | 0666)) < 0) {
         perror("Master shmgetB failed.");
 		clean_up();
         exit(1);
     }
-	else if ((shmidC = shmget(KEYC, (sizeof(struct Resources)*20), IPC_CREAT | 0666)) < 0) {
+	else if ((shmidC = shmget(KEYC, (sizeof(struct Request)*10), IPC_CREAT | 0666)) < 0) {
         perror("Master shmgetC failed.");
 		clean_up();
         exit(1);
@@ -185,7 +189,7 @@ int main(int argc, char *argv[]){
 		clean_up();
         exit(1);
     }
-	else if ((requests = shmat(shmidC, NULL, 0)) == (char *) -1) {
+	else if ((req = shmat(shmidC, NULL, 0)) == (char *) -1) {
         perror("Master shmat failed.");
 		clean_up();
         exit(1);
@@ -195,6 +199,8 @@ int main(int argc, char *argv[]){
 	// clear out shmMsg
 	clock[0] = 0;			// seconds
 	clock[1] = 0;			// nanoseconds
+	reqNum = clock[3];
+	reqNum = 0;
 	/* SHARED MEMORY END*/
 
 	
@@ -210,9 +216,10 @@ int main(int argc, char *argv[]){
 
 	/* POPULATE RESOURCES */
 	// set how many to share this time around (between 15% (3) and 25% (5))
-	numShare = (3 + (int)(rand() / (double)((RAND_MAX + 1) * (5 - 3 + 1))));
+	// numShare = (3 + (int)(rand() / (double)((RAND_MAX + 1) * (5 - 3 + 1))));
+	numShare = 1;
 	int nsn = 0;
-	for(i = 0; i < 20; i++) {
+	for(i = 0; i < resLim; i++) {
 		r[i].amount = (rand() % 10) + 1;
 		r[i].amoUsed = 0;
 		// if we havent marked enough resources as shared yet, mark one
@@ -224,20 +231,22 @@ int main(int argc, char *argv[]){
 		
 	// calculate end time
 	start = time(NULL);
+	end = start + 2;
 	printf("Starting program...\n");
 	fprintf(f, "Master: Starting clock loop at %s", ctime(&start));
 	fprintf(f, "\n-------------------------\n\n");
 	
 	/* WHILE LOOP */
-	when = 
-    while (clock[0] < simTimeEnd || start <= start + 2) {  
-		
+    while (clock[0] < simTimeEnd || start <= end) {
+
 		// check to see if its time to fork off a new child
 		int now = (clock[0] * 1,000) + (clock[1] * 1,000,000);	
 		if(now <= now + when){
 			// check to see if the amount of kids currently active
 			// if we are at the limit, do not spawn another
-			if(activeKids < kidLim){
+			if(active < kidLim){
+				printf("Master: Spawning new process.\n");
+				active++;
 				pid = fork();
 				if (pid < 0) {
 					perror(errstr); 
@@ -254,15 +263,73 @@ int main(int argc, char *argv[]){
 				}
 			}
 		}
+	
+		// check for any requests, use a semaphore to lock the request
+		// number so each req gets its own private one
+		while(sem_trywait(semaphore) != 0){ /* wait for sem */ }
+			int n = reqNum;
+			if(reqNum > 10) { reqNum = 0;}
+			else { reqNum++; }
+		sem_post(semaphore);
 		
+		if(req[n].timens == -1){
+			// do nothing
+		}
+		else {
+			printf("Master: Working on request #%i.\n", n);
+			
+			// print some info on the request
+			printf("Request #%i by Process %ld from %i.%i:\n", n, req[n].pid, req[n].times, req[n].timens);
+			printf("\tR%i: %i pieces requested.\n", req[n].which, req[n].amo);
+			
+			// check if the request is shared, if it is not, see if it's used already
+			if(r[req[n].which].shared == 0){
+				if(r[req[n].which].amoUsed > 0) {
+					printf("Master: R%i is already in use. Request denied.\n", req[n].which);
+				}
+				// if its not used, see if theres enough for the desired request
+				else { 
+					if(req[n].amo > r[req[n].which].amount) {
+						printf("Master: R%i does not have enough available. Request denied.\n", req[n].which);
+					}
+					// if yes, grant the request
+					else { 
+						printf("Master: Request for %i of R%i granted to Process %ld granted.\n", req[n].amo, req[n].which, req[n].pid); 
+						r[req[n].which].amoUsed += req[n].amo;
+						req[n].granted = 1;
+					} 
+				}
+					
+			}
+			// if it is shared, see if theres enough available for request
+			else {
+				if(r[req[n].which].amoUsed > req[n].amo){
+					printf("Master: R%i does not have enough available. Request denied.\n", req[n].which);
+				}
+				// if yes, grant the request
+				else {
+					printf("Master: Request for %i of R%i granted to Process %ld granted.\n", req[n].amo, req[n].which, req[n].pid); 
+					r[req[n].which].amoUsed += req[n].amo;
+					req[n].granted = 1;
+				}
+			}
+			
+			// request the request
+			req[n].pid = -1;
+			req[n].which = -1;
+			req[n].amo = -1;
+			req[n].times = -1;
+			req[n].timens = -1;
+			req[n].granted = 0;
+		}
 		
 	}
 	
-	fprintf(f, "Master: Time's up!\n");
+	printf(f, "Master: Time's up!\n");
 	wait(NULL);
 	fprintf(f, "\n-------------------------\n\n");
 	start = time(NULL);
-	fprintf(f, "Master: Ending clock loop at %s", ctime(&start));
+	printf(f, "Master: Ending clock loop at %s", ctime(&start));
 	fprintf(f, "Master: Simulated time ending at: %i seconds, %i nanoseconds.\n", clock[0], clock[1]);
 	printf("Finished! Please see output file for details.\n");
 	
@@ -278,7 +345,7 @@ void clean_up(){
 	printf("Master: Cleaning up now.\n");
 	
 	int i;
-	for(i = 0; i < make; i++){
+	for(i = 0; i < active; i++){
 		// kill(b[i].pid, SIGTERM);
 	}
 	

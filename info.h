@@ -5,8 +5,6 @@ Resource Management
 
 */
 
-extern int reqNum;
-
 /* SEMAPHORE */
 #define SEM_NAME "/semaName"
 #define SEM_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
@@ -34,7 +32,7 @@ struct Request {
 	int granted;
 	int times;
 	int timens;
-}
+};
 
 /* USE DATA */
 // A simple struct to track certain ways to use the resources.
