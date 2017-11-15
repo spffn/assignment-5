@@ -23,6 +23,7 @@ FILE *f;
 int shmidA, shmidB, shmidC;
 sem_t *semaphore;
 int active;
+pid_t *pcpids;
 
 void sig_handler(int);
 void clean_up(void);
@@ -65,6 +66,9 @@ int main(int argc, char *argv[]){
 	
     time_t start;					// the timer information
 	time_t end;
+	
+	pid_t (*cpids)[kidLim] = malloc(sizeof *cpids);
+	pcpids = cpids;
 	/* VARIOUS VARIABLES END */
 	
 	
@@ -261,8 +265,9 @@ int main(int argc, char *argv[]){
 				if(verFlag == 1){
 					fprintf(f, "(!!) Master: Spawning new process.\n\n"); prCnt++;
 				}
+				(*cpids)[active] = fork();
+				pid = (*cpids)[active];
 				active++;
-				pid = fork();
 				if (pid < 0) {
 					perror(errstr); 
 					printf("Fork failed!\n");
@@ -407,7 +412,7 @@ int main(int argc, char *argv[]){
 		if(prCnt > 15) {
 			for(m = 0; m < 20; m++) {
 				if(r[m].amoUsed > 0) { 
-					fprintf(f, "R%i: %i Used", m, r[m].amoUsed); prCnt++;
+					fprintf(f, "R%i: %i Used\n", m, r[m].amoUsed); prCnt++;
 					for(k = 0; k < 10; k++) {
 						if(r[n].who[k].pid != -1) { 
 							fprintf(f, "\tP%ld : %i\n", r[n].who[k].pid, r[n].who[k].amo); prCnt++;
@@ -427,8 +432,14 @@ int main(int argc, char *argv[]){
 		
 	}
 	
+	if(active > 0){
+		for(i = 0; i < kidLim; i++){
+			kill((*cpids)[i], SIGTERM);
+		}
+	}
 	
 	printf("Master: Time's up!\n");
+	
 	wait(NULL);
 	fprintf(f, "\n-------------------------\n\n");
 	start = time(NULL);
@@ -458,6 +469,7 @@ void clean_up(){
 	if (sem_unlink(SEM_NAME) < 0){
 		perror("sem_unlink(3) failed");
 	}
+	free(pcpids);
 	sem_close(semaphore);
 	fclose(f);
 }
