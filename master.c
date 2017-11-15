@@ -41,6 +41,13 @@ int main(int argc, char *argv[]){
         exit(EXIT_FAILURE);
     }
 	
+	// close it because we dont use the semaphore in the parent and we want it to
+	// autodie once all processes using it have ended
+	if (sem_close(semaphore) < 0) {
+        perror("sem_close(3) failed");
+        sem_unlink(SEM_NAME);
+        exit(EXIT_FAILURE);
+    }
 	/* SEMAPHORE INFO END */
 	/* SETTING UP SIGNAL HANDLING */
 	signal(SIGINT, sig_handler);
@@ -56,7 +63,7 @@ int main(int argc, char *argv[]){
 	int verFlag = 0;
 	int * reqNum;						// which # request a child is
 	int when;							// when to fork a new child
-	int resLim = 5;
+	int resLim = 2;
 	int i;
 	
 	pid_t pid, cpid;
@@ -123,7 +130,7 @@ int main(int argc, char *argv[]){
 				printf("\tex: -v \n");
 				
 				printf("----------\n\n");
-				return 0;
+				break;
 			}
 			case 'v':{
 				printf("Setting log style to verbose.\n");
@@ -155,7 +162,7 @@ int main(int argc, char *argv[]){
 	struct Request *req;
 	
 	// create segments to hold all the info from file
-	if ((shmidA = shmget(KEYA, 75, IPC_CREAT | 0666)) < 0) {
+	if ((shmidA = shmget(KEYA, 50, IPC_CREAT | 0666)) < 0) {
         perror("Master shmgetA failed.");
 		clean_up();
         exit(1);
@@ -192,7 +199,7 @@ int main(int argc, char *argv[]){
 	// clear out shmMsg
 	clock[0] = 0;			// seconds
 	clock[1] = 0;			// nanoseconds
-	reqNum = clock[2];
+	reqNum = clock[3];
 	reqNum = 0;
 	/* SHARED MEMORY END*/
 
@@ -210,16 +217,14 @@ int main(int argc, char *argv[]){
 	/* POPULATE RESOURCES */
 	// set how many to share this time around (between 15% (3) and 25% (5))
 	// numShare = (3 + (int)(rand() / (double)((RAND_MAX + 1) * (5 - 3 + 1))));
-	numShare = 2;
+	numShare = 1;
 	int nsn = 0;
 	for(i = 0; i < resLim; i++) {
 		r[i].amount = (rand() % 10) + 1;
 		r[i].amoUsed = 0;
-		printf("Master: Creating %i of R%i.\n", r[i].amount, i);
 		// if we havent marked enough resources as shared yet, mark one
 		if(nsn < numShare) {
 			r[i].shared = 1;
-			printf("Master: R%i is shared.\n", i);
 			nsn++;
 		}	
 	}
@@ -227,14 +232,12 @@ int main(int argc, char *argv[]){
 	// calculate end time
 	start = time(NULL);
 	end = start + 2;
-	printf("\nStarting program...\n");
+	printf("Starting program...\n");
 	fprintf(f, "Master: Starting clock loop at %s", ctime(&start));
 	fprintf(f, "\n-------------------------\n\n");
 	
-	when = (rand() % 500) + 1;
-	
 	/* WHILE LOOP */
-    while (clock[0] < simTimeEnd && start <= end) {
+    while (clock[0] < simTimeEnd || start <= end) {
 
 		// check to see if its time to fork off a new child
 		int now = (clock[0] * 1,000) + (clock[1] * 1,000,000);	
@@ -259,22 +262,24 @@ int main(int argc, char *argv[]){
 					exit(1);
 				}
 			}
-			
-			when = (rand() % 500) + 1;
 		}
 	
 		// check for any requests, use a semaphore to lock the request
 		// number so each req gets its own private one
 		while(sem_trywait(semaphore) != 0){ /* wait for sem */ }
 			int n = reqNum;
+			if(reqNum > 10) { reqNum = 0;}
+			else { reqNum++; }
 		sem_post(semaphore);
 		
-		if(req[n].timens <= 0){
+		if(req[n].timens == -1){
 			// do nothing
 		}
 		else {
+			printf("Master: Working on request #%i.\n", n);
+			
 			// print some info on the request
-			printf("Master: Working on request #%i by Process %ld @ %i.%i:\n", n, req[n].pid, req[n].times, req[n].timens);
+			printf("Request #%i by Process %ld from %i.%i:\n", n, req[n].pid, req[n].times, req[n].timens);
 			printf("\tR%i: %i pieces requested.\n", req[n].which, req[n].amo);
 			
 			// check if the request is shared, if it is not, see if it's used already
@@ -309,7 +314,7 @@ int main(int argc, char *argv[]){
 				}
 			}
 			
-			// reset the request
+			// request the request
 			req[n].pid = -1;
 			req[n].which = -1;
 			req[n].amo = -1;
@@ -318,21 +323,14 @@ int main(int argc, char *argv[]){
 			req[n].granted = 0;
 		}
 		
-		start = time(NULL);
-		clock[1] += 100000;
-		if(clock[1] - 1000000000 > 0){
-			clock[1] -= 1000000000; 
-			clock[0] += 1;
-		}
-		
 	}
 	
 	printf(f, "Master: Time's up!\n");
 	wait(NULL);
 	fprintf(f, "\n-------------------------\n\n");
 	start = time(NULL);
-	printf("Master: Ending clock loop at %s", ctime(&start));
-	printf("Master: Simulated time ending at: %i seconds, %i nanoseconds.\n", clock[0], clock[1]);
+	printf(f, "Master: Ending clock loop at %s", ctime(&start));
+	fprintf(f, "Master: Simulated time ending at: %i seconds, %i nanoseconds.\n", clock[0], clock[1]);
 	printf("Finished! Please see output file for details.\n");
 	
 	/* CLEAN UP */ 
