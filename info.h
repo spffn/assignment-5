@@ -15,13 +15,20 @@ Resource Management
 #define KEYB 888
 #define KEYC 777
 
+/* USE DATA */
+// A simple struct to track certain ways to use the resources.
+struct alloc{
+	pid_t pid;
+	int amo;
+};
+
 /* RESOURCE DESCRIPTS */
 struct Resources {
 	int amount;						// amount available, between 0 and 10
 	int amoUsed;					// amount currently used
 	int shared;						// 0 = no; 1 = yes
 	// resouce ownership array
-	// struct alloc allocated[];
+	struct alloc who[10];
 };
 
 /* RESOURCE REQUEST STRUCT */
@@ -33,10 +40,3 @@ struct Request {
 	int times;
 	int timens;
 };
-
-/* USE DATA */
-// A simple struct to track certain ways to use the resources.
-struct alloc{
-	pid_t pid;
-	int amo;
-};	

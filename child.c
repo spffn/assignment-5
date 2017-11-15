@@ -39,7 +39,7 @@ int main(int argc, char *argv[]){
 	
 	/* VARIOUS VARIABLES */
 	srand(time(NULL));
-	int bound = 300;					
+	int bound = 50;					
 	int letGo = 0;						// # of milliseconds to release a resource after
 	int cStop = 0;						// # of milliseconds to check stop after
 	int which;							// which resources to let go / request
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]){
         perror("child shmget A failed");
         exit(1);
     }
-	else if ((shmidB = shmget(KEYB, (sizeof(struct Resources)*5), 0666)) < 0) {
+	else if ((shmidB = shmget(KEYB, (sizeof(struct Resources)*20), 0666)) < 0) {
         perror("child shmget B failed");
         exit(1);
     }
@@ -88,15 +88,15 @@ int main(int argc, char *argv[]){
 	
 	int stop = 0;
 	int i;
+	now = (clock[0] * 1,000) + (clock[1] * 1,000,000);
 	
 	// enter while loop
 	while(stop == 0) { 
 		// see if its time to stop
 		cStop = rand() % 251;
-		now = (clock[0] * 1,000) + (clock[1] * 1,000,000);
-		if(now <= now + cStop){
-			// 1 in 10 chance to end program
-			if(rand() % 10 < 1){ 
+		if(now <= (clock[0] * 1,000) + (clock[1] * 1,000,000) + cStop){
+			// 1 in 4 chance to end program
+			if(rand() % 4 < 1){ 
 				printf("%ld: Ending process @ %i.%i, releasing resources.\n", pid, clock[0], clock[1]);
 				stop = 1; 
 				// release all own resources
@@ -116,8 +116,8 @@ int main(int argc, char *argv[]){
 		// 1,000 ms = 1 second
 		// 1,000,000,000 ns = 1 seconds
 		// 1 ms = 1,000,000 ns
-		/* letGo = rand() % bound;
-		if(now <= now + letGo) { */
+		letGo = rand() % bound;
+		if(now <= (clock[0] * 1,000) + (clock[1] * 1,000,000) + letGo) {
 			doWhat = rand() % 2;
 			switch(doWhat){
 				// release
@@ -136,33 +136,35 @@ int main(int argc, char *argv[]){
 							p_own--;
 						}
 						else { p_own = 0; }
+						
 					}
 					break;
 				}
 				// request
 				case 1: {
-					which = rand() % 5;
+					which = rand() % 20;
 					int n;
 					
 					sem_wait(semaphore);
 					n = clock[2];
-					clock[2] += 1;
 					
 					printf("%ld: Submitting req #%i.\n", pid, n);
 					
 					req[n].pid = pid;
 					req[n].which = which;
 					// MAX request is limited to how many the resource has
-					int x = (rand() % r[which].amount + 1);
+					int x = (rand() % 10) + 1;
 					req[n].amo = x;
 					req[n].times = clock[0];
 					req[n].timens = clock[1];
 					req[n].granted = 0;
 					printf("%ld: Requesting %i of R%i @ %i.%i...\n\n", req[n].pid, req[n].amo, req[n].which, clock[0], clock[1]);
+					
+					clock[2] += 1;
 					sem_post(semaphore);
 					
 					// now wait till request is granted
-					while(req[n].granted == 0) { /* wait */ }
+					while(req[n].granted != 1) { /* wait */ }
 					
 					printf("\n(!!) %ld: Request granted for %i of R%i @ %i.%i.\n\n", pid, x, which, clock[0], clock[1]);
 					own[p_own].num = req[n].which;
@@ -182,7 +184,7 @@ int main(int argc, char *argv[]){
 					continue;
 				}
 			}
-		/* } */
+		} 
 		
 		now = (clock[0] * 1,000) + (clock[1] * 1,000,000);
 	}

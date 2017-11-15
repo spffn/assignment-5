@@ -49,15 +49,16 @@ int main(int argc, char *argv[]){
 	// 1,000 ms = 1 second
 	// 1,000,000,000 ns = 1 seconds
 	// 1 ms = 1,000,000 ns	
-	int kidLim = 2;						// limit on processes to have at once
+	int kidLim = 18;						// limit on processes to have at once
 	active = 0;							// # of currently active processes
-	int simTimeEnd = 10;				// when to end the simulation
+	int simTimeEnd = 40;				// when to end the simulation
 	int numShare;						// how many resources to share this time
 	int verFlag = 0;
 	int when;							// when to fork a new child
-	int resLim = 5;
+	int resLim = 20;
 	int i;
 	int prCnt = 0;						// line print count
+	int tpc = 0;
 	
 	pid_t pid, cpid;
 	char fname[] = "log.out";		// file name
@@ -208,9 +209,9 @@ int main(int argc, char *argv[]){
 
 	/* POPULATE RESOURCES */
 	// set how many to share this time around (between 15% (3) and 25% (5))
-	// numShare = (3 + (int)(rand() / (double)((RAND_MAX + 1) * (5 - 3 + 1))));
-	numShare = 2;
+	numShare = (rand() % 3) + 3;
 	int nsn = 0;
+	int k;
 	for(i = 0; i < resLim; i++) {
 		r[i].amount = (rand() % 10) + 1;
 		r[i].amoUsed = 0;
@@ -220,7 +221,21 @@ int main(int argc, char *argv[]){
 			r[i].shared = 1;
 			printf("Master: R%i is shared.\n", i);
 			nsn++;
-		}	
+		}
+		for(k = 0; k < 10; k++){
+			r[i].who[k].pid = -1;
+			r[i].who[k].amo = -1;
+		}		
+	}
+	
+	for(i = 0; i < 10; i++){
+		// reset the requests
+		req[i].pid = -1;
+		req[i].which = -1;
+		req[i].amo = -1;
+		req[i].times = -1;
+		req[i].timens = -1;
+		req[i].granted = -1;
 	}
 		
 	// calculate end time
@@ -232,6 +247,7 @@ int main(int argc, char *argv[]){
 	
 	when = (rand() % 500) + 1;
 	int lastRun = clock[1];
+	int n = 0;
 	
 	/* WHILE LOOP */
     while (clock[0] < simTimeEnd && start <= end) {
@@ -243,7 +259,7 @@ int main(int argc, char *argv[]){
 			// if we are at the limit, do not spawn another
 			if(active < kidLim){
 				if(verFlag == 1){
-					fprintf(f, "Master: Spawning new process.\n"); prCnt++;
+					fprintf(f, "(!!) Master: Spawning new process.\n\n"); prCnt++;
 				}
 				active++;
 				pid = fork();
@@ -267,7 +283,7 @@ int main(int argc, char *argv[]){
 	
 		// check for any requests, use a semaphore to lock the request
 		// number so each req gets its own private one
-		int n = clock[2];
+		if(req[n].granted == 0){
 			// print some info on the request
 			if(verFlag == 1){
 				fprintf(f, "Master: Working on request #%i by Process %ld @ %i.%i:\n", n, req[n].pid, req[n].times, req[n].timens); 
@@ -279,26 +295,38 @@ int main(int argc, char *argv[]){
 			if(r[req[n].which].shared == 0){
 				if(r[req[n].which].amoUsed > 0) {
 					if(verFlag == 1){ 
-						fprintf(f, "Master: R%i is already in use. Request denied.\n", req[n].which);
-						prCnt++;
+						fprintf(f, "Master: R%i is nonshared.\n", req[n].which);
+						fprintf(f, "Master: R%i is already in use. Request denied.\n\n", req[n].which);
+						prCnt += 2;
 					}
 				}
 				// if its not used, see if theres enough for the desired request
 				else { 
 					if(req[n].amo > r[req[n].which].amount) {
 						if(verFlag == 1){
-							fprintf(f, "Master: R%i does not have enough available. Request denied.\n", req[n].which);
+							fprintf(f, "Master: R%i does not have enough available. Request denied.\n\n", req[n].which);
 							prCnt++;
 						}
 					}
 					// if yes, grant the request
 					else { 
 						if(verFlag == 1){ 
-							fprintf(f, "Master: Request for %i of R%i granted to Process %ld granted.\n", req[n].amo, req[n].which, req[n].pid); 
+							fprintf(f, "(!!) Master: Request for %i of R%i granted to Process %ld granted.\n\n", req[n].amo, req[n].which, req[n].pid); 
 							prCnt++;
 						}
 						r[req[n].which].amoUsed += req[n].amo;
 						req[n].granted = 1;
+						
+						// add process allocation array for the resource in the
+						// next available spot
+						for(k = 0; k < 10; k++){
+							if(r[req[n].which].who[k].amo > 0){ continue; }
+							else { 
+								r[req[n].which].who[k].pid = req[n].pid;
+								r[req[n].which].who[k].amo = req[n].amo;
+								break;
+							}
+						}
 					} 
 				}
 					
@@ -307,18 +335,29 @@ int main(int argc, char *argv[]){
 			else {
 				if(r[req[n].which].amoUsed > req[n].amo){
 					if(verFlag == 1){
-						fprintf(f, "Master: R%i does not have enough available. Request denied.\n", req[n].which);
+						fprintf(f, "Master: R%i does not have enough available. Request denied.\n\n", req[n].which);
 						prCnt++;
 					}
 				}
 				// if yes, grant the request
 				else {
 					if(verFlag == 1){ 
-						fprintf(f, "Master: Request for %i of R%i granted to Process %ld granted.\n", req[n].amo, req[n].which, req[n].pid); 
+						fprintf(f, "Master: Request for %i of R%i granted to Process %ld granted.\n\n", req[n].amo, req[n].which, req[n].pid); 
 						prCnt++;
 					}
 					r[req[n].which].amoUsed += req[n].amo;
 					req[n].granted = 1;
+					
+					// add process allocation array for the resource in the
+					// next available spot
+					for(k = 0; k < 10; k++){
+						if(r[req[n].which].who[k].amo > 0){ continue; }
+						else { 
+							r[req[n].which].who[k].pid = req[n].pid;
+							r[req[n].which].who[k].amo = req[n].amo;
+							break;
+						}
+					}
 				}
 			}
 			
@@ -328,32 +367,73 @@ int main(int argc, char *argv[]){
 			req[n].amo = -1;
 			req[n].times = -1;
 			req[n].timens = -1;
-			req[n].granted = 0;
+			req[n].granted = -1;
 			
 			if(clock[2] > 10) { clock[2] = 0; }
+			n++;
+			if(n > 10) { n = 0; }
+		}
+		else {
+			if(clock[2] > 10) { clock[2] = 0; }
+			n++;
+			if(n > 10) { n = 0; }
+		}
 		
 		// anywhere between 500 to 1000 ns run deadlock detection algorithm
 		if(lastRun <= clock[1] + (when * 2)){
 			/* deadlock detection algorithm */
-			// check to see if any of the requests have been in there for over 
-			// 1 ms and if they have, its a deadlock, so kill the process
+			// for each request, look at the time it was submitted
+			// if the request has been in there for over 10 ms, kill it and see if
+			// this allows for any of the other requests to be filled
+			// if not, continue to kill requests that have been in the queue for the
+			// longest, until another request can be fulfilled
 		}
 		
 		start = time(NULL);
-		clock[1] += 10000;
+		clock[1] += 100;
 		if(clock[1] - 1000000000 > 0){
 			clock[1] -= 1000000000; 
 			clock[0] += 1;
 		}
 		
+		// print out the "process table" if the print count of other lines to the
+		// file is over 20
+		// format:
+		// R#: 
+		//	Pid: # owned
+		//	Pid: # owned
+		//	Pid: # owned
+		int m;
+		if(prCnt > 15) {
+			for(m = 0; m < 20; m++) {
+				if(r[m].amoUsed > 0) { 
+					fprintf(f, "R%i: %i Used", m, r[m].amoUsed); prCnt++;
+					for(k = 0; k < 10; k++) {
+						if(r[n].who[k].pid != -1) { 
+							fprintf(f, "\tP%ld : %i\n", r[n].who[k].pid, r[n].who[k].amo); prCnt++;
+						}
+					}
+					fprintf(f, "\n");
+				}
+			}
+			fprintf(f, "\n");
+			tpc = prCnt;
+			prCnt = 0;
+		}
+		
+		if(tpc > 1000){
+			verFlag = 0;
+		}
+		
 	}
 	
-	printf(f, "Master: Time's up!\n");
+	
+	printf("Master: Time's up!\n");
 	wait(NULL);
 	fprintf(f, "\n-------------------------\n\n");
 	start = time(NULL);
-	printf("Master: Ending clock loop at %s", ctime(&start));
-	printf("Master: Simulated time ending at: %i seconds, %i nanoseconds.\n", clock[0], clock[1]);
+	fprintf(f, "Master: Ending clock loop at %s", ctime(&start));
+	fprintf(f, "Master: Simulated time ending at: %i seconds, %i nanoseconds.\n", clock[0], clock[1]);
 	printf("Finished! Please see output file for details.\n");
 	
 	/* CLEAN UP */ 
@@ -388,6 +468,7 @@ void clean_up(){
 void sig_handler(int signo){
 	if (signo == SIGINT){
 		printf("Master: Caught Ctrl-C.\n");
+		fprintf(f, "Master: Caught Ctrl-C, terminating early.\n");
 		clean_up();
 		exit(0);
 	}
