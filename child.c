@@ -55,11 +55,11 @@ int main(int argc, char *argv[]){
 	int shmidA, shmidB, shmidC;
 	
 	// locate the segments
-	if ((shmidA = shmget(KEYA, 50, 0666)) < 0) {
+	if ((shmidA = shmget(KEYA, 75, 0666)) < 0) {
         perror("child shmget A failed");
         exit(1);
     }
-	else if ((shmidB = shmget(KEYB, (sizeof(struct Resources)*2), 0666)) < 0) {
+	else if ((shmidB = shmget(KEYB, (sizeof(struct Resources)*5), 0666)) < 0) {
         perror("child shmget B failed");
         exit(1);
     }
@@ -90,15 +90,15 @@ int main(int argc, char *argv[]){
 	int stop = 0;
 	int i;
 	now = (clock[0] * 1,000) + (clock[1] * 1,000,000);
-	reqNum = clock[3];
+	reqNum = clock[2];
 	
 	// enter while loop
 	while(stop == 0) { 
 		// see if its time to stop
 		cStop = rand() % 251;
 		if(now <= now + cStop){
-			// 1 in 5 chance to end program
-			if(rand() % 5 < 1){ 
+			// 1 in 10 chance to end program
+			if(rand() % 10 < 1){ 
 				printf("%ld: Ending process @ %i.%i, releasing resources.\n", pid, clock[0], clock[1]);
 				stop = 1; 
 				// release all own resources
@@ -143,13 +143,12 @@ int main(int argc, char *argv[]){
 				}
 				// request
 				case 1: {
-					printf("%ld: Trying to request resources.\n", pid);
-					which = rand() % 2;
+					which = rand() % 5;
 					int n;
+					
 					while(sem_trywait(semaphore) != 0){ /* wait for sem */ }
-						n = reqNum;
-						printf("%ld: Submitting req #%i.\n", pid, n);
-					sem_post(semaphore);
+					n = reqNum;
+					printf("%ld: Submitting req #%i.\n", pid, n);
 					
 					req[n].pid = pid;
 					req[n].which = which;
@@ -159,10 +158,16 @@ int main(int argc, char *argv[]){
 					req[n].times = clock[0];
 					req[n].timens = clock[1];
 					req[n].granted = 0;
-					printf("%ld: Requesting %i of R%i @ %i.%i.\n", pid, x, which, clock[0], clock[1]);
+					printf("%ld: Requesting %i of R%i @ %i.%i...\n\n", req[n].pid, req[n].amo, req[n].which, clock[0], clock[1]);
+					
+					if(reqNum > 10) { reqNum = 0; }
+					else { reqNum += 1; }
+					sem_post(semaphore);
+					
 					// now wait till request is granted
 					while(req[n].granted == 0) { /* wait */ }
 					
+					printf("(!!) %ld: Request granted for %i of R%i @ %i.%i.\n", pid, x, which, clock[0], clock[1]);
 					own[p_own].num = req[n].which;
 					own[p_own].amo = req[n].amo;
 					p_own++;
