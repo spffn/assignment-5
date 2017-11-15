@@ -39,7 +39,6 @@ int main(int argc, char *argv[]){
 	
 	/* VARIOUS VARIABLES */
 	srand(time(NULL));
-	int *reqNum;
 	int bound = 300;					
 	int letGo = 0;						// # of milliseconds to release a resource after
 	int cStop = 0;						// # of milliseconds to check stop after
@@ -89,13 +88,12 @@ int main(int argc, char *argv[]){
 	
 	int stop = 0;
 	int i;
-	now = (clock[0] * 1,000) + (clock[1] * 1,000,000);
-	reqNum = clock[2];
 	
 	// enter while loop
 	while(stop == 0) { 
 		// see if its time to stop
 		cStop = rand() % 251;
+		now = (clock[0] * 1,000) + (clock[1] * 1,000,000);
 		if(now <= now + cStop){
 			// 1 in 10 chance to end program
 			if(rand() % 10 < 1){ 
@@ -146,8 +144,10 @@ int main(int argc, char *argv[]){
 					which = rand() % 5;
 					int n;
 					
-					while(sem_trywait(semaphore) != 0){ /* wait for sem */ }
-					n = reqNum;
+					sem_wait(semaphore);
+					n = clock[2];
+					clock[2] += 1;
+					
 					printf("%ld: Submitting req #%i.\n", pid, n);
 					
 					req[n].pid = pid;
@@ -159,15 +159,12 @@ int main(int argc, char *argv[]){
 					req[n].timens = clock[1];
 					req[n].granted = 0;
 					printf("%ld: Requesting %i of R%i @ %i.%i...\n\n", req[n].pid, req[n].amo, req[n].which, clock[0], clock[1]);
-					
-					if(reqNum > 10) { reqNum = 0; }
-					else { reqNum += 1; }
 					sem_post(semaphore);
 					
 					// now wait till request is granted
 					while(req[n].granted == 0) { /* wait */ }
 					
-					printf("(!!) %ld: Request granted for %i of R%i @ %i.%i.\n", pid, x, which, clock[0], clock[1]);
+					printf("\n(!!) %ld: Request granted for %i of R%i @ %i.%i.\n\n", pid, x, which, clock[0], clock[1]);
 					own[p_own].num = req[n].which;
 					own[p_own].amo = req[n].amo;
 					p_own++;
